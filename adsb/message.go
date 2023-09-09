@@ -25,6 +25,7 @@ package adsb
 import (
 	"bytes"
 	"errors"
+	"math"
 )
 
 // Message provides a high-level abstraction for ADS-B messages. The
@@ -33,6 +34,11 @@ import (
 type Message struct {
 	raw *RawMessage
 }
+
+const (
+	KNOT_TO_MPS         = 0.514444444 // factor to convert from knot to m/s
+	FEET_PER_MIN_TO_MPS = 0.00508     // factor to convert from feet/min to m/s
+)
 
 // NewMessage wraps a RawMessage and returns the new Message.
 func NewMessage(r *RawMessage) (*Message, error) {
@@ -234,4 +240,66 @@ func (m *Message) CPR() (*CPR, error) {
 	c.Lon = uint32(m.raw.Bits(72, 88))
 
 	return c, nil
+}
+
+// Vertical speed, in m/s.
+func (m *Message) VerticalSpeed() (float64, error) {
+	tc := m.raw.TC()
+	if tc != 19 {
+		return 0.0, newError(ErrNotAvailable, "vertical rate not available")
+	}
+
+	svr := int(m.raw.Bit(69))
+	vr := int(m.raw.Bits(70, 78))
+	if vr == 0 {
+		return 0.0, newError(ErrNotAvailable, "vertical rate not available")
+	}
+
+	v := 64 * (vr - 1)
+	if svr == 1 {
+		v = -v
+	}
+	return float64(v) * FEET_PER_MIN_TO_MPS, nil
+}
+
+// Ground speed decoding with GNSS information, in m/s.
+// velocity: in m/s.
+// heading: in degrees where the north is 0, east is 90, south is 180, west is 270.
+func (m *Message) GroundSpeed() (velocity, heading float64, err error) {
+	tc := m.raw.TC()
+	if tc != 19 {
+		return 0.0, 0.0, newError(ErrNotAvailable, "ground speed not available")
+	}
+
+	subType := m.raw.Bits(38, 40)
+	if subType != 1 && subType != 2 {
+		return 0.0, 0.0, newError(ErrNotAvailable, "ground speed not available")
+	}
+
+	dew := int(m.raw.Bit(46))
+	vew := int(m.raw.Bits(47, 56))
+	dns := int(m.raw.Bit(57))
+	vns := int(m.raw.Bits(58, 67))
+
+	if vew == 0 || vns == 0 {
+		return 0.0, 0.0, newError(ErrNotAvailable, "ground speed not available")
+	}
+
+	vEW := float64(vew - 1)
+	vNS := float64(vns - 1)
+	if subType == 2 {
+		vEW *= 4
+		vNS *= 4
+	}
+	if dew == 1 {
+		vEW = -vEW
+	}
+	if dns == 1 {
+		vNS = -vNS
+	}
+
+	velocity = math.Sqrt(vEW*vEW+vNS*vNS) * KNOT_TO_MPS
+	heading = math.Atan2(vEW, vNS) * 180.0 / math.Pi
+
+	return velocity, heading, nil
 }
