@@ -25,7 +25,6 @@ package adsb
 import (
 	"bytes"
 	"errors"
-	"math"
 )
 
 // Message provides a high-level abstraction for ADS-B messages. The
@@ -35,7 +34,7 @@ type Message struct {
 	raw *RawMessage
 }
 
-const KNOT_TO_KM = 1.852
+const MPS_PER_KNOT = 0.514444444 // factor to convert from knot to meters per second
 
 // NewMessage wraps a RawMessage and returns the new Message.
 func NewMessage(r *RawMessage) (*Message, error) {
@@ -243,41 +242,56 @@ func (m *Message) TypeCode() uint64 {
 	return m.raw.TC()
 }
 
-func (m *Message) Velocity() (float64, float64, error) {
+// Ground speed decoding with GNSS information, in m/s.
+// velocityEW: E-W velocity, positive from West to East, negative from East to West
+// velocityNS: N-S velocity, positive from South to North, negative from North to South
+func (m *Message) GroundSpeed() (velocityEW, velocityNS float64, err error) {
 	tc := m.raw.TC()
 	if tc != 19 {
-		return 0.0, 0.0, newError(nil, "error retrieving velocity")
+		return 0.0, 0.0, newError(ErrNotAvailable, "error retrieving ground speed")
 	}
 
 	subType := m.raw.Bits(38, 40)
-
-	if subType == 1 || subType == 2 { //need speed times 4 for subtype 2?
-		ewDir := m.raw.Bits(46, 46)
-		ewVelocity := int64(m.raw.Bits(47, 56))
-		nsDir := m.raw.Bits(57, 57)
-		nsVelocity := int64(m.raw.Bits(58, 67))
-
-		velocity := math.Sqrt(float64(ewVelocity*ewVelocity+nsVelocity*nsVelocity)) * KNOT_TO_KM
-		if velocity > 0 {
-			if ewDir == 1 {
-				ewVelocity *= -1
-			}
-			if nsDir == 1 {
-				nsVelocity *= -1
-			}
-			heading := math.Atan2(float64(ewVelocity), float64(nsVelocity)) * 180 / math.Pi
-			if heading < 0 {
-				heading += 360
-			}
-			return velocity, heading, nil
-		} else {
-			return 0.0, 0.0, nil
-		}
-	} else if subType == 3 || subType == 4 { // no GPS scenario is not supported here
-		return 0.0, 0.0, newError(nil, "error retrieving velocity")
+	if subType != 1 && subType != 2 {
+		return 0.0, 0.0, newError(ErrNotAvailable, "error retrieving ground speed")
 	}
 
-	return 0.0, 0.0, newError(nil, "error retrieving velocity")
+	dew := int(m.raw.Bit(46))
+	vew := int(m.raw.Bits(47, 56))
+	if vew == 0 {
+		velocityEW = 0
+	} else {
+		if dew == 0 {
+			vew = vew - 1
+		} else {
+			vew = -(vew - 1)
+		}
+
+		if subType == 1 {
+			velocityEW = float64(vew) * MPS_PER_KNOT
+		} else {
+			velocityEW = float64(4*vew) * MPS_PER_KNOT
+		}
+	}
+
+	dns := int(m.raw.Bit(57))
+	vns := int(m.raw.Bits(58, 67))
+	if vns == 0 {
+		velocityNS = 0
+	} else {
+		if dns == 0 {
+			vns = vns - 1
+		} else {
+			vns = -(vns - 1)
+		}
+		if subType == 1 {
+			velocityNS = float64(vns) * MPS_PER_KNOT
+		} else {
+			velocityNS = float64(4*vns) * MPS_PER_KNOT
+		}
+	}
+
+	return velocityEW, velocityNS, nil
 }
 
 func (m *Message) DfType() int {
