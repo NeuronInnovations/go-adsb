@@ -238,10 +238,6 @@ func (m *Message) CPR() (*CPR, error) {
 	return c, nil
 }
 
-func (m *Message) TypeCode() uint64 {
-	return m.raw.TC()
-}
-
 // Ground speed decoding with GNSS information, in m/s.
 // velocityEW: E-W velocity, positive from West to East, negative from East to West
 // velocityNS: N-S velocity, positive from South to North, negative from North to South
@@ -292,13 +288,4 @@ func (m *Message) GroundSpeed() (velocityEW, velocityNS float64, err error) {
 	}
 
 	return velocityEW, velocityNS, nil
-}
-
-func (m *Message) DfType() int {
-	if df, err := m.raw.DF(); err == nil {
-		return int(df)
-	} else {
-		return -1
-	}
-
 }
