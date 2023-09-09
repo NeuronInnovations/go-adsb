@@ -20,7 +20,7 @@
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package adsb_test
+package adsb
 
 import (
 	"bytes"
@@ -29,12 +29,10 @@ import (
 	"errors"
 	"fmt"
 	"testing"
-
-	"github.com/bluvec/go-adsb/adsb"
 )
 
 func TestRawUnmarshalInterface(t *testing.T) {
-	var i interface{} = new(adsb.RawMessage)
+	var i interface{} = new(RawMessage)
 	if _, ok := i.(encoding.BinaryUnmarshaler); !ok {
 		t.Fatal("RawMessage does not implement encoding.BinaryUnmarshaler")
 	}
@@ -76,7 +74,7 @@ func testRawUnmarshalErr(t *testing.T, m string, e string) {
 		t.Fatal("received unexpected error:", err)
 	}
 
-	rm := new(adsb.RawMessage)
+	rm := new(RawMessage)
 
 	err = rm.UnmarshalBinary(b)
 	if err == nil {
@@ -99,7 +97,7 @@ func testRawBitNeg(t *testing.T) {
 		t.Fatal("received unexpected error:", err)
 	}
 
-	r := new(adsb.RawMessage)
+	r := new(RawMessage)
 
 	err = r.UnmarshalBinary(b)
 	if err != nil {
@@ -125,7 +123,7 @@ func testRawBitZero(t *testing.T) {
 		t.Fatal("received unexpected error:", err)
 	}
 
-	r := new(adsb.RawMessage)
+	r := new(RawMessage)
 
 	err = r.UnmarshalBinary(b)
 	if err != nil {
@@ -151,7 +149,7 @@ func testRawBitLarge(t *testing.T) {
 		t.Fatal("received unexpected error:", err)
 	}
 
-	r := new(adsb.RawMessage)
+	r := new(RawMessage)
 
 	err = r.UnmarshalBinary(b)
 	if err != nil {
@@ -177,7 +175,7 @@ func testRawBitGood(t *testing.T) {
 		t.Fatal("received unexpected error:", err)
 	}
 
-	r := new(adsb.RawMessage)
+	r := new(RawMessage)
 
 	err = r.UnmarshalBinary(b)
 	if err != nil {
@@ -212,7 +210,7 @@ func testRawBitsNeg(t *testing.T) {
 		t.Fatal("received unexpected error:", err)
 	}
 
-	r := new(adsb.RawMessage)
+	r := new(RawMessage)
 
 	err = r.UnmarshalBinary(b)
 	if err != nil {
@@ -238,7 +236,7 @@ func testRawBitsZero(t *testing.T) {
 		t.Fatal("received unexpected error:", err)
 	}
 
-	r := new(adsb.RawMessage)
+	r := new(RawMessage)
 
 	err = r.UnmarshalBinary(b)
 	if err != nil {
@@ -264,7 +262,7 @@ func testRawBitsLarge(t *testing.T) {
 		t.Fatal("received unexpected error:", err)
 	}
 
-	r := new(adsb.RawMessage)
+	r := new(RawMessage)
 
 	err = r.UnmarshalBinary(b)
 	if err != nil {
@@ -290,7 +288,7 @@ func testRawBitsRev(t *testing.T) {
 		t.Fatal("received unexpected error:", err)
 	}
 
-	r := new(adsb.RawMessage)
+	r := new(RawMessage)
 
 	err = r.UnmarshalBinary(b)
 	if err != nil {
@@ -316,7 +314,7 @@ func testRawBitsBig(t *testing.T) {
 		t.Fatal("received unexpected error:", err)
 	}
 
-	r := new(adsb.RawMessage)
+	r := new(RawMessage)
 
 	err = r.UnmarshalBinary(b)
 	if err != nil {
@@ -342,7 +340,7 @@ func testRawBitsGood(t *testing.T) {
 		t.Fatal("received unexpected error:", err)
 	}
 
-	r := new(adsb.RawMessage)
+	r := new(RawMessage)
 
 	err = r.UnmarshalBinary(b)
 	if err != nil {
@@ -529,7 +527,7 @@ func testRaw(t *testing.T, m string, results map[string]uint64) {
 		t.Fatalf("unexpected error %v", err)
 	}
 
-	rm := new(adsb.RawMessage)
+	rm := new(RawMessage)
 
 	err = rm.UnmarshalBinary(msg)
 	if err != nil {
@@ -569,7 +567,7 @@ func testRaw(t *testing.T, m string, results map[string]uint64) {
 				if err.Error() != expErr {
 					t.Errorf("%s  expected: '%s'  received: '%v'", n, expErr, err)
 				}
-				if !errors.Is(err, adsb.ErrNotAvailable) {
+				if !errors.Is(err, ErrNotAvailable) {
 					t.Errorf("%s  unexpected error type, not ErrNotAvailable", n)
 				}
 			}
@@ -588,7 +586,7 @@ func testRawMD(t *testing.T, m string, r []byte) {
 		t.Fatalf("unexpected error %v", err)
 	}
 
-	rm := new(adsb.RawMessage)
+	rm := new(RawMessage)
 
 	err = rm.UnmarshalBinary(msg)
 	if err != nil {
@@ -628,7 +626,7 @@ func testRawMD(t *testing.T, m string, r []byte) {
 }
 
 func TestRawFieldsNotLoaded(t *testing.T) {
-	rm := new(adsb.RawMessage)
+	rm := new(RawMessage)
 	fields := map[string]func() (uint64, error){
 		"AA": rm.AA, "AC": rm.AC, "AF": rm.AF, "AP": rm.AP,
 		"CA": rm.CA, "CC": rm.CC, "CF": rm.CF,
