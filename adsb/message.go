@@ -35,7 +35,10 @@ type Message struct {
 	raw *RawMessage
 }
 
-const MPS_PER_KNOT = 0.514444444 // factor to convert from knot to meters per second
+const (
+	KNOT_TO_MPS         = 0.514444444 // factor to convert from knot to m/s
+	FEET_PER_MIN_TO_MPS = 0.00508     // factor to convert from feet/min to m/s
+)
 
 // NewMessage wraps a RawMessage and returns the new Message.
 func NewMessage(r *RawMessage) (*Message, error) {
@@ -239,6 +242,26 @@ func (m *Message) CPR() (*CPR, error) {
 	return c, nil
 }
 
+// Vertical speed, in m/s.
+func (m *Message) VerticalSpeed() (float64, error) {
+	tc := m.raw.TC()
+	if tc != 19 {
+		return 0.0, newError(ErrNotAvailable, "vertical rate not available")
+	}
+
+	svr := int(m.raw.Bit(69))
+	vr := int(m.raw.Bits(70, 78))
+	if vr == 0 {
+		return 0.0, newError(ErrNotAvailable, "vertical rate not available")
+	}
+
+	v := 64 * (vr - 1)
+	if svr == 1 {
+		v = -v
+	}
+	return float64(v) * FEET_PER_MIN_TO_MPS, nil
+}
+
 // Ground speed decoding with GNSS information, in m/s.
 // velocity: in m/s.
 // heading: in degrees where the north is 0, east is 90, south is 180, west is 270.
@@ -275,7 +298,7 @@ func (m *Message) GroundSpeed() (velocity, heading float64, err error) {
 		vNS = -vNS
 	}
 
-	velocity = math.Sqrt(vEW*vEW+vNS*vNS) * MPS_PER_KNOT
+	velocity = math.Sqrt(vEW*vEW+vNS*vNS) * KNOT_TO_MPS
 	heading = math.Atan2(vEW, vNS) * 180.0 / math.Pi
 
 	return velocity, heading, nil

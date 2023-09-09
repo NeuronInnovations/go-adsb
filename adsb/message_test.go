@@ -973,4 +973,15 @@ func testGroundSpeed(t *testing.T) {
 		t.Error("incorrect heading")
 		return
 	}
+
+	verticalSpeed, err := m.VerticalSpeed()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	log.Printf("vertical speed: %v m/s", verticalSpeed)
+	if math.Abs(verticalSpeed-(-8.45312)) > 0.001 {
+		t.Error("incorrect vertical rate")
+		return
+	}
 }
