@@ -25,6 +25,7 @@ package adsb
 import (
 	"bytes"
 	"errors"
+	"math"
 )
 
 // Message provides a high-level abstraction for ADS-B messages. The
@@ -239,53 +240,43 @@ func (m *Message) CPR() (*CPR, error) {
 }
 
 // Ground speed decoding with GNSS information, in m/s.
-// velocityEW: E-W velocity, positive from West to East, negative from East to West
-// velocityNS: N-S velocity, positive from South to North, negative from North to South
-func (m *Message) GroundSpeed() (velocityEW, velocityNS float64, err error) {
+// velocity: in m/s.
+// heading: in degrees where the north is 0, east is 90, south is 180, west is 270.
+func (m *Message) GroundSpeed() (velocity, heading float64, err error) {
 	tc := m.raw.TC()
 	if tc != 19 {
-		return 0.0, 0.0, newError(ErrNotAvailable, "error retrieving ground speed")
+		return 0.0, 0.0, newError(ErrNotAvailable, "ground speed not available")
 	}
 
 	subType := m.raw.Bits(38, 40)
 	if subType != 1 && subType != 2 {
-		return 0.0, 0.0, newError(ErrNotAvailable, "error retrieving ground speed")
+		return 0.0, 0.0, newError(ErrNotAvailable, "ground speed not available")
 	}
 
 	dew := int(m.raw.Bit(46))
 	vew := int(m.raw.Bits(47, 56))
-	if vew == 0 {
-		velocityEW = 0
-	} else {
-		if dew == 0 {
-			vew = vew - 1
-		} else {
-			vew = -(vew - 1)
-		}
-
-		if subType == 1 {
-			velocityEW = float64(vew) * MPS_PER_KNOT
-		} else {
-			velocityEW = float64(4*vew) * MPS_PER_KNOT
-		}
-	}
-
 	dns := int(m.raw.Bit(57))
 	vns := int(m.raw.Bits(58, 67))
-	if vns == 0 {
-		velocityNS = 0
-	} else {
-		if dns == 0 {
-			vns = vns - 1
-		} else {
-			vns = -(vns - 1)
-		}
-		if subType == 1 {
-			velocityNS = float64(vns) * MPS_PER_KNOT
-		} else {
-			velocityNS = float64(4*vns) * MPS_PER_KNOT
-		}
+
+	if vew == 0 || vns == 0 {
+		return 0.0, 0.0, newError(ErrNotAvailable, "ground speed not available")
 	}
 
-	return velocityEW, velocityNS, nil
+	vEW := float64(vew - 1)
+	vNS := float64(vns - 1)
+	if subType == 2 {
+		vEW *= 4
+		vNS *= 4
+	}
+	if dew == 1 {
+		vEW = -vEW
+	}
+	if dns == 1 {
+		vNS = -vNS
+	}
+
+	velocity = math.Sqrt(vEW*vEW+vNS*vNS) * MPS_PER_KNOT
+	heading = math.Atan2(vEW, vNS) * 180.0 / math.Pi
+
+	return velocity, heading, nil
 }

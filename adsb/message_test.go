@@ -20,16 +20,16 @@
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package adsb_test
+package adsb
 
 import (
 	"bytes"
 	"encoding/hex"
 	"errors"
+	"log"
+	"math"
 	"math/big"
 	"testing"
-
-	"github.com/bluvec/go-adsb/adsb"
 )
 
 func TestMessageErrors(t *testing.T) {
@@ -42,12 +42,13 @@ func TestMessageErrors(t *testing.T) {
 	t.Run("CallError", testMsgCallErr)
 	t.Run("SqkError", testMsgSqkErr)
 	t.Run("CPRError", testMsgCPRErr)
+	t.Run("GroundSpeedError", testGroundSpeed)
 }
 
 func testMsgEmptyRaw(t *testing.T) {
-	rm := new(adsb.RawMessage)
+	rm := new(RawMessage)
 
-	_, err := adsb.NewMessage(rm)
+	_, err := NewMessage(rm)
 	if err == nil {
 		t.Fatal("received nil, expected error")
 	}
@@ -63,14 +64,14 @@ func testMsgUnsupported(t *testing.T) {
 		t.Fatal("received unexpected error", err)
 	}
 
-	rm := new(adsb.RawMessage)
+	rm := new(RawMessage)
 
 	err = rm.UnmarshalBinary(raw)
 	if err != nil {
 		t.Fatal("received unexpected error", err)
 	}
 
-	_, err = adsb.NewMessage(rm)
+	_, err = NewMessage(rm)
 	if err == nil {
 		t.Fatal("received nil, expected error")
 	}
@@ -79,7 +80,7 @@ func testMsgUnsupported(t *testing.T) {
 		t.Error("received unexpected error", err)
 	}
 
-	if !errors.Is(err, adsb.ErrUnsupported) {
+	if !errors.Is(err, ErrUnsupported) {
 		t.Error("expected error type ErrUnsupported not received")
 	}
 }
@@ -90,7 +91,7 @@ func testMsgUnknown(t *testing.T) {
 		t.Fatal("received unexpected error", err)
 	}
 
-	m := new(adsb.Message)
+	m := new(Message)
 
 	err = m.UnmarshalBinary(raw)
 	if err == nil {
@@ -108,7 +109,7 @@ func testMsgICAOErr0(t *testing.T) {
 		t.Fatal("received unexpected error", err)
 	}
 
-	m := new(adsb.Message)
+	m := new(Message)
 
 	err = m.UnmarshalBinary(raw)
 	if err != nil {
@@ -146,7 +147,7 @@ func testMsgICAOErr19(t *testing.T) {
 		t.Fatal("received unexpected error", err)
 	}
 
-	m := new(adsb.Message)
+	m := new(Message)
 
 	err = m.UnmarshalBinary(raw)
 	if err != nil {
@@ -185,7 +186,7 @@ func testMsgAltErr(t *testing.T) {
 		t.Fatal("received unexpected error", err)
 	}
 
-	m := new(adsb.Message)
+	m := new(Message)
 
 	err = m.UnmarshalBinary(raw)
 	if err != nil {
@@ -223,7 +224,7 @@ func testMsgCallErr(t *testing.T) {
 		t.Fatal("received unexpected error", err)
 	}
 
-	m := new(adsb.Message)
+	m := new(Message)
 
 	err = m.UnmarshalBinary(raw)
 	if err != nil {
@@ -261,7 +262,7 @@ func testMsgSqkErr(t *testing.T) {
 		t.Fatal("received unexpected error", err)
 	}
 
-	m := new(adsb.Message)
+	m := new(Message)
 
 	err = m.UnmarshalBinary(raw)
 	if err != nil {
@@ -299,7 +300,7 @@ func testMsgCPRErr(t *testing.T) {
 		t.Fatal("received unexpected error", err)
 	}
 
-	m := new(adsb.Message)
+	m := new(Message)
 
 	err = m.UnmarshalBinary(raw)
 	if err != nil {
@@ -704,7 +705,7 @@ func testDecode(t *testing.T, tc *testCase) {
 		t.Fatal("received unexpected error", err)
 	}
 
-	msg := new(adsb.Message)
+	msg := new(Message)
 
 	err = msg.UnmarshalBinary(b)
 	if err != nil {
@@ -718,12 +719,12 @@ func testDecode(t *testing.T, tc *testCase) {
 	testCPR(t, tc, msg)
 }
 
-func testCPR(t *testing.T, tc *testCase, msg *adsb.Message) {
+func testCPR(t *testing.T, tc *testCase, msg *Message) {
 	t.Helper()
 
 	cpr, err := msg.CPR()
 	if err != nil {
-		if tc.CPR != false || tc.CPR == false && !errors.Is(err, adsb.ErrNotAvailable) {
+		if tc.CPR != false || tc.CPR == false && !errors.Is(err, ErrNotAvailable) {
 			t.Fatal("received unexpected error", err)
 		}
 	}
@@ -749,7 +750,7 @@ func testCPR(t *testing.T, tc *testCase, msg *adsb.Message) {
 	}
 }
 
-func testCPRLocal(t *testing.T, tc *testCase, cpr *adsb.CPR) {
+func testCPRLocal(t *testing.T, tc *testCase, cpr *CPR) {
 	t.Helper()
 
 	c, err := cpr.DecodeLocal(tc.RefPt)
@@ -773,10 +774,10 @@ func testCPRLocal(t *testing.T, tc *testCase, cpr *adsb.CPR) {
 	}
 }
 
-func testCPRGlobal(t *testing.T, tc *testCase, cpr *adsb.CPR) {
+func testCPRGlobal(t *testing.T, tc *testCase, cpr *CPR) {
 	t.Helper()
 
-	rm := new(adsb.RawMessage)
+	rm := new(RawMessage)
 
 	m2b, err := (hex.DecodeString(tc.Msg2))
 	if err != nil {
@@ -788,7 +789,7 @@ func testCPRGlobal(t *testing.T, tc *testCase, cpr *adsb.CPR) {
 		t.Fatal("received unexpected error", err)
 	}
 
-	m, err := adsb.NewMessage(rm)
+	m, err := NewMessage(rm)
 	if err != nil {
 		t.Fatal("received unexpected error", err)
 	}
@@ -802,7 +803,7 @@ func testCPRGlobal(t *testing.T, tc *testCase, cpr *adsb.CPR) {
 		t.Fatal("no position decoded in Msg2")
 	}
 
-	c, err := adsb.DecodeGlobalPosition(cpr, cpr2)
+	c, err := DecodeGlobalPosition(cpr, cpr2)
 	if err != nil {
 		t.Error("CPR: global decode error:", err)
 	} else {
@@ -823,7 +824,7 @@ func testCPRGlobal(t *testing.T, tc *testCase, cpr *adsb.CPR) {
 	}
 }
 
-func testICAO(t *testing.T, tc *testCase, msg *adsb.Message) {
+func testICAO(t *testing.T, tc *testCase, msg *Message) {
 	t.Helper()
 
 	icao, err := msg.ICAO()
@@ -836,12 +837,12 @@ func testICAO(t *testing.T, tc *testCase, msg *adsb.Message) {
 	}
 }
 
-func testSqk(t *testing.T, tc *testCase, msg *adsb.Message) {
+func testSqk(t *testing.T, tc *testCase, msg *Message) {
 	t.Helper()
 
 	sqk, err := msg.Sqk()
 	if err != nil {
-		if len(tc.Sqk) > 0 || len(tc.Sqk) == 0 && !errors.Is(err, adsb.ErrNotAvailable) {
+		if len(tc.Sqk) > 0 || len(tc.Sqk) == 0 && !errors.Is(err, ErrNotAvailable) {
 			t.Fatal("received unexpected error", err)
 		}
 	}
@@ -851,12 +852,12 @@ func testSqk(t *testing.T, tc *testCase, msg *adsb.Message) {
 	}
 }
 
-func testCall(t *testing.T, tc *testCase, msg *adsb.Message) {
+func testCall(t *testing.T, tc *testCase, msg *Message) {
 	t.Helper()
 
 	call, err := msg.Call()
 	if err != nil {
-		if tc.Call != "" || tc.Call == "" && !errors.Is(err, adsb.ErrNotAvailable) {
+		if tc.Call != "" || tc.Call == "" && !errors.Is(err, ErrNotAvailable) {
 			t.Fatal("received unexpected error", err)
 		}
 	}
@@ -866,12 +867,12 @@ func testCall(t *testing.T, tc *testCase, msg *adsb.Message) {
 	}
 }
 
-func testAlt(t *testing.T, tc *testCase, msg *adsb.Message) {
+func testAlt(t *testing.T, tc *testCase, msg *Message) {
 	t.Helper()
 
 	a, err := msg.Alt()
 	if err != nil {
-		if tc.Alt != 0 || tc.Alt == 0 && !errors.Is(err, adsb.ErrNotAvailable) {
+		if tc.Alt != 0 || tc.Alt == 0 && !errors.Is(err, ErrNotAvailable) {
 			t.Fatal("received unexpected error", err)
 		}
 	}
@@ -911,7 +912,7 @@ func testDecodeErr(t *testing.T, tc *testCase) {
 		t.Fatal("received unexpected error", err)
 	}
 
-	msg := new(adsb.Message)
+	msg := new(Message)
 
 	err = msg.UnmarshalBinary(b)
 	if err != nil {
@@ -923,7 +924,7 @@ func testDecodeErr(t *testing.T, tc *testCase) {
 	}
 }
 
-func testAltError(t *testing.T, tc *testCase, msg *adsb.Message) {
+func testAltError(t *testing.T, tc *testCase, msg *Message) {
 	t.Helper()
 
 	a, err := msg.Alt()
@@ -939,5 +940,37 @@ func testAltError(t *testing.T, tc *testCase, msg *adsb.Message) {
 
 	if tc.AltError != err.Error() {
 		t.Errorf("expected %s, received %s", tc.AltError, err)
+	}
+}
+
+func testGroundSpeed(t *testing.T) {
+	b, err := hex.DecodeString("8dc054bd9908dc85986c0c2ebe76")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	var m Message
+	if err := m.UnmarshalBinary(b); err != nil {
+		t.Error(err)
+		return
+	}
+
+	velocity, heading, err := m.GroundSpeed()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	log.Printf("velocity: %v m/s, heading: %v degrees", velocity, heading)
+
+	if math.Abs(velocity-114.8145) > 0.001 {
+		t.Errorf("incorrect velocity")
+		return
+	}
+
+	if math.Abs(heading-101.1085) > 0.001 {
+		t.Error("incorrect heading")
+		return
 	}
 }
