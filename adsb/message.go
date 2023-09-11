@@ -264,7 +264,7 @@ func (m *Message) VerticalSpeed() (float64, error) {
 
 // Ground speed decoding with GNSS information, in m/s.
 // velocity: in m/s.
-// heading: in degrees where the north is 0, east is 90, south is 180, west is 270.
+// heading: in degrees with range (-180, 180], where the north is 0, east is 90, south is 180, west is -90.
 func (m *Message) GroundSpeed() (velocity, heading float64, err error) {
 	tc := m.raw.TC()
 	if tc != 19 {
