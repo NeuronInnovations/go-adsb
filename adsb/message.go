@@ -24,7 +24,9 @@ package adsb
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"math"
 )
 
@@ -244,9 +246,21 @@ func (m *Message) CPR() (*CPR, error) {
 
 // Vertical speed, in m/s.
 func (m *Message) VerticalSpeed() (float64, error) {
+	df, err := m.raw.DF()
+	if err != nil {
+		return 0.0, newError(ErrNotAvailable, "err decode DF")
+	} else if df != 17 && df != 18 {
+		return 0.0, newError(ErrNotAvailable, "not a DF 17/18 packet")
+	}
+
 	tc := m.raw.TC()
 	if tc != 19 {
 		return 0.0, newError(ErrNotAvailable, "vertical rate not available")
+	}
+
+	dlen := m.raw.data.Len()
+	if dlen < 14 {
+		return 0.0, newError(ErrNotAvailable, fmt.Sprintf("invalid msg len: %d, %s", dlen, hex.EncodeToString(m.raw.data.Bytes())))
 	}
 
 	svr := int(m.raw.Bit(69))
@@ -266,9 +280,21 @@ func (m *Message) VerticalSpeed() (float64, error) {
 // velocity: in m/s.
 // heading: in degrees with range (-180, 180], where the north is 0, east is 90, south is 180, west is -90.
 func (m *Message) GroundSpeed() (velocity, heading float64, err error) {
+	df, err := m.raw.DF()
+	if err != nil {
+		return 0.0, 0.0, newError(ErrNotAvailable, "err decode DF")
+	} else if df != 17 && df != 18 {
+		return 0.0, 0.0, newError(ErrNotAvailable, "not a DF 17/18 packet")
+	}
+
 	tc := m.raw.TC()
 	if tc != 19 {
 		return 0.0, 0.0, newError(ErrNotAvailable, "ground speed not available")
+	}
+
+	dlen := m.raw.data.Len()
+	if dlen < 14 {
+		return 0.0, 0.0, newError(ErrNotAvailable, fmt.Sprintf("invalid msg len: %d, %s", dlen, hex.EncodeToString(m.raw.data.Bytes())))
 	}
 
 	subType := m.raw.Bits(38, 40)
