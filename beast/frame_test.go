@@ -30,7 +30,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bluvec/go-adsb/beast"
+	"github.com/NeuronInnovations/go-adsb/beast"
 )
 
 func TestInterfaces(t *testing.T) {

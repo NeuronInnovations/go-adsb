@@ -26,7 +26,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/bluvec/go-adsb/adsbtype"
+	"github.com/NeuronInnovations/go-adsb/adsbtype"
 )
 
 // TestConst tests string formatting of constant values.

@@ -162,6 +162,19 @@ func (f *Frame) Timestamp() (time.Duration, error) {
 	return time.Duration(ts * 1000 / 12).Round(time.Microsecond / 2), nil
 }
 
+func (f *Frame) TimestampIfGPS() (int64, int64, int64, error) {
+	if f.data.Len() < 8 {
+		return 0, 0, 0, ErrNoData
+	}
+
+	d := f.data.Bytes()
+
+	seconds := int64(d[2])<<10 | int64(d[3])<<2 | int64(d[4])>>6
+	nanos := (int64(d[4])&0x3F)<<24 | int64(d[5])<<16 | int64(d[6])<<8 | int64(d[7])
+
+	return seconds*1000000000 + nanos, seconds, nanos, nil
+}
+
 // Type returns the frame type byte.
 func (f *Frame) Type() (byte, error) {
 	if f.data.Len() < 10 {
