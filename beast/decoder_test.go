@@ -29,8 +29,8 @@ import (
 	"io"
 	"testing"
 
-	"github.com/bluvec/go-adsb/beast"
-	"github.com/bluvec/go-adsb/beast/internal"
+	"github.com/NeuronInnovations/go-adsb/beast"
+	"github.com/NeuronInnovations/go-adsb/beast/internal"
 )
 
 func TestDecode(t *testing.T) {

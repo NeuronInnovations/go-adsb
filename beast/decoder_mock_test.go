@@ -28,7 +28,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/bluvec/go-adsb/beast/internal"
+	"github.com/NeuronInnovations/go-adsb/beast/internal"
 )
 
 var _ decoderReader = new(internal.MockReader)
