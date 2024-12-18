@@ -1,9 +1,11 @@
 # Overview
+<!--
 [![PkgGoDev](https://pkg.go.dev/badge/kreklow.us/go/go-adsb)](https://pkg.go.dev/kreklow.us/go/go-adsb)
 ![GitHub](https://img.shields.io/github/license/cjkreklow/go-adsb.svg)
 ![GitHub tag (latest SemVer)](https://img.shields.io/github/tag/cjkreklow/go-adsb.svg)
 [![Build Status](https://www.travis-ci.org/cjkreklow/go-adsb.svg?branch=main)](https://www.travis-ci.org/cjkreklow/go-adsb)
 [![codecov](https://codecov.io/gh/cjkreklow/go-adsb/branch/main/graph/badge.svg)](https://codecov.io/gh/cjkreklow/go-adsb)
+-->
 
 `go-adsb` is a Go module that includes packages for working with ADS-B and
 Mode S aircraft transponder data.
@@ -42,6 +44,13 @@ Printf-style operations.
 See the documentation on [pkg.go.dev](https://pkg.go.dev/kreklow.us/go/go-adsb)
 for import paths and usage information.
 
-# About
-`go-adsb` is maintained by Collin Kreklow. The source code is licensed under
-the terms of the MIT license, see `LICENSE.txt` for further information.
+# Attribution
+
+This project is a fork of [bluvec's repository](https://github.com/bluvec/go-adsb), which itself was forked from the original project by [Collin Kreklow](https://github.com/cjkreklow/go-adsb).
+
+The original project by [Collin Kreklow](https://github.com/cjkreklow/go-adsb) is licensed under the [MIT License](https://opensource.org/licenses/MIT).
+
+Credit goes to both [Collin Kreklow](https://github.com/cjkreklow/go-adsb) and [bluvec](https://github.com/bluvec/go-adsb) for their contributions to this project.
+
+This fork, maintained by Neuron Innovations, aims to build upon their excellent work.
+
