@@ -956,21 +956,21 @@ func testGroundSpeed(t *testing.T) {
 		return
 	}
 
-	velocity, heading, err := m.GroundSpeed()
+	velocity, trackAngle, err := m.GroundSpeed()
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	log.Printf("velocity: %v m/s, heading: %v degrees", velocity, heading)
+	log.Printf("velocity: %v m/s, trackAngle: %v degrees", velocity, trackAngle)
 
 	if math.Abs(velocity-114.8145) > 0.001 {
 		t.Errorf("incorrect velocity")
 		return
 	}
 
-	if math.Abs(heading-101.1085) > 0.001 {
-		t.Error("incorrect heading")
+	if math.Abs(trackAngle-101.1085) > 0.001 {
+		t.Error("incorrect trackAngle")
 		return
 	}
 

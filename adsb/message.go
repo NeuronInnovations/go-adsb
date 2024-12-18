@@ -278,8 +278,8 @@ func (m *Message) VerticalSpeed() (float64, error) {
 
 // Ground speed decoding with GNSS information, in m/s.
 // velocity: in m/s.
-// heading: in degrees with range (-180, 180], where the north is 0, east is 90, south is 180, west is -90.
-func (m *Message) GroundSpeed() (velocity, heading float64, err error) {
+// trackAngle: in degrees with range (-180, 180], where the north is 0, east is 90, south is 180, west is -90.
+func (m *Message) GroundSpeed() (velocity, trackAngle float64, err error) {
 	df, err := m.raw.DF()
 	if err != nil {
 		return 0.0, 0.0, newError(ErrNotAvailable, "err decode DF")
@@ -325,7 +325,7 @@ func (m *Message) GroundSpeed() (velocity, heading float64, err error) {
 	}
 
 	velocity = math.Sqrt(vEW*vEW+vNS*vNS) * KNOT_TO_MPS
-	heading = math.Atan2(vEW, vNS) * 180.0 / math.Pi
+	trackAngle = math.Atan2(vEW, vNS) * 180.0 / math.Pi
 
-	return velocity, heading, nil
+	return velocity, trackAngle, nil
 }
