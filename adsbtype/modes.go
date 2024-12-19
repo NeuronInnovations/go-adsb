@@ -19,12 +19,99 @@
 // ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
-
 package adsbtype
 
 import (
 	"fmt"
 )
+
+type TC uint8
+type CAT uint8
+
+// TC ranges from 1 to 4
+const (
+	TC1 TC = 1
+	TC2 TC = 2
+	TC3 TC = 3
+	TC4 TC = 4
+)
+
+// CAT ranges from 0 to 7
+const (
+	CAT0 CAT = 0
+	CAT1 CAT = 1
+	CAT2 CAT = 2
+	CAT3 CAT = 3
+	CAT4 CAT = 4
+	CAT5 CAT = 5
+	CAT6 CAT = 6
+	CAT7 CAT = 7
+)
+
+type EmitterKey struct {
+	TC  TC
+	CAT CAT
+}
+
+var EmitterCategories = map[EmitterKey]string{
+	// ANY 0 -> No category information
+	{TC: TC1, CAT: CAT0}: "No category information",
+	{TC: TC2, CAT: CAT0}: "No category information",
+	{TC: TC3, CAT: CAT0}: "No category information",
+	{TC: TC4, CAT: CAT0}: "No category information",
+
+	// TC=1 ANY -> Reserved (except for CAT0 already defined)
+	{TC: TC1, CAT: CAT1}: "Reserved",
+	{TC: TC1, CAT: CAT2}: "Reserved",
+	{TC: TC1, CAT: CAT3}: "Reserved",
+	{TC: TC1, CAT: CAT4}: "Reserved",
+	{TC: TC1, CAT: CAT5}: "Reserved",
+	{TC: TC1, CAT: CAT6}: "Reserved",
+	{TC: TC1, CAT: CAT7}: "Reserved",
+
+	// TC=2
+	// 2,1 = Surface emergency vehicle
+	{TC: TC2, CAT: CAT1}: "Surface emergency vehicle",
+	// 2,3 = Surface service vehicle
+	{TC: TC2, CAT: CAT3}: "Surface service vehicle",
+	// 2,4–7 = Ground obstruction
+	{TC: TC2, CAT: CAT4}: "Ground obstruction",
+	{TC: TC2, CAT: CAT5}: "Ground obstruction",
+	{TC: TC2, CAT: CAT6}: "Ground obstruction",
+	{TC: TC2, CAT: CAT7}: "Ground obstruction",
+
+	// TC=3
+	// 3,1 = Glider/sailplane
+	{TC: TC3, CAT: CAT1}: "Glider / sailplane",
+	// 3,2 = Lighter-than-air
+	{TC: TC3, CAT: CAT2}: "Lighter-than-air",
+	// 3,3 = Parachutist/skydiver
+	{TC: TC3, CAT: CAT3}: "Parachutist / skydiver",
+	// 3,4 = Ultralight/hang-glider/paraglider
+	{TC: TC3, CAT: CAT4}: "Ultralight / hang-glider / paraglider",
+	// 3,5 = Reserved
+	{TC: TC3, CAT: CAT5}: "Reserved",
+	// 3,6 = Unmanned aerial vehicle
+	{TC: TC3, CAT: CAT6}: "Unmanned aerial vehicle",
+	// 3,7 = Space/transatmospheric vehicle
+	{TC: TC3, CAT: CAT7}: "Space / trans-atmospheric vehicle",
+
+	// TC=4
+	// 4,1 = Light (<7000 kg)
+	{TC: TC4, CAT: CAT1}: "Light (less than 7000 kg)",
+	// 4,2 = Medium 1 (7000-34000 kg)
+	{TC: TC4, CAT: CAT2}: "Medium 1 (7000 kg to 34000 kg)",
+	// 4,3 = Medium 2 (34000-136000 kg)
+	{TC: TC4, CAT: CAT3}: "Medium 2 (34000 kg to 136000 kg)",
+	// 4,4 = High vortex aircraft
+	{TC: TC4, CAT: CAT4}: "High vortex aircraft",
+	// 4,5 = Heavy (>136000 kg)
+	{TC: TC4, CAT: CAT5}: "Heavy (larger than 136000 kg)",
+	// 4,6 = High performance and high speed
+	{TC: TC4, CAT: CAT6}: "High performance (>5g & >400 kt)",
+	// 4,7 = Rotorcraft
+	{TC: TC4, CAT: CAT7}: "Rotorcraft",
+}
 
 // CA is the capability.
 type CA uint64

@@ -30,6 +30,8 @@ import (
 	"math"
 	"math/big"
 	"testing"
+
+	"github.com/NeuronInnovations/go-adsb/adsbtype"
 )
 
 func TestMessageErrors(t *testing.T) {
@@ -43,6 +45,7 @@ func TestMessageErrors(t *testing.T) {
 	t.Run("SqkError", testMsgSqkErr)
 	t.Run("CPRError", testMsgCPRErr)
 	t.Run("GroundSpeedError", testGroundSpeed)
+	t.Run("AircraftTypeError", testAircraftDetails)
 }
 
 func testMsgEmptyRaw(t *testing.T) {
@@ -983,5 +986,76 @@ func testGroundSpeed(t *testing.T) {
 	if math.Abs(verticalSpeed-(-8.45312)) > 0.001 {
 		t.Error("incorrect vertical rate")
 		return
+	}
+}
+func testAircraftDetails(t *testing.T) {
+	testCases := []struct {
+		Name          string
+		HexMsg        string
+		Expected      string
+		ExpectedError string
+	}{
+		// example hex messages attribution http://jasonplayne.com:8080/#
+		{
+			Name:     "TC=4, CAT=0 (No category information)",
+			HexMsg:   "8D76CE88204C9072CB48209A504D",
+			Expected: adsbtype.EmitterCategories[adsbtype.EmitterKey{TC: adsbtype.TC4, CAT: adsbtype.CAT0}],
+		},
+		{
+			Name:     "TC=4, CAT=1 (Light)",
+			HexMsg:   "8D7C7181215D01A08208204D8BF1",
+			Expected: adsbtype.EmitterCategories[adsbtype.EmitterKey{TC: adsbtype.TC4, CAT: adsbtype.CAT1}],
+		},
+		{
+			Name:     "TC=4, CAT=2 (Small)",
+			HexMsg:   "8D7C7745226151A08208205CE9C2",
+			Expected: adsbtype.EmitterCategories[adsbtype.EmitterKey{TC: adsbtype.TC4, CAT: adsbtype.CAT2}],
+		},
+		{
+			Name:     "TC=4, CAT=3 (Large)",
+			HexMsg:   "8D7C80AD2358F6B1E35C60FF1925",
+			Expected: adsbtype.EmitterCategories[adsbtype.EmitterKey{TC: adsbtype.TC4, CAT: adsbtype.CAT3}],
+		},
+		{
+			Name:     "TC=4, CAT=5 (Heavy)",
+			HexMsg:   "8D7C146525446074DF5820738E90",
+			Expected: adsbtype.EmitterCategories[adsbtype.EmitterKey{TC: adsbtype.TC4, CAT: adsbtype.CAT5}],
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			rawData, err := hex.DecodeString(tc.HexMsg)
+			if err != nil {
+				t.Fatalf("failed to decode hex: %v", err)
+			}
+			msg := new(Message)
+			err = msg.UnmarshalBinary(rawData)
+			if err != nil {
+				if tc.ExpectedError == "" {
+					t.Fatalf("unexpected error unmarshalling: %v", err)
+				}
+				// Check if the error matches expected
+				if err.Error() != tc.ExpectedError {
+					t.Errorf("expected error %q, got %q", tc.ExpectedError, err.Error())
+				}
+				return
+			}
+
+			details, err := msg.AircraftDetails()
+			if err != nil {
+				if tc.ExpectedError == "" {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if err.Error() != tc.ExpectedError {
+					t.Errorf("expected error %q, got %q", tc.ExpectedError, err.Error())
+				}
+				return
+			}
+
+			if details != tc.Expected {
+				t.Errorf("expected %q, got %q", tc.Expected, details)
+			}
+		})
 	}
 }

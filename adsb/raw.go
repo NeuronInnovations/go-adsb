@@ -187,8 +187,14 @@ func (r *RawMessage) DF() (uint64, error) {
 	return b, nil
 }
 
+// TC returns the Type Code field.
 func (r *RawMessage) TC() uint64 {
 	return r.Bits(33, 37)
+}
+
+// CAT retrieves the Emitter Category (bits 37–40).
+func (r *RawMessage) CAT() uint64 {
+	return r.Bits(37, 40)
 }
 
 // DP returns the Data Parity field.

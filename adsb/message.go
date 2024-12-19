@@ -28,6 +28,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+
+	"github.com/NeuronInnovations/go-adsb/adsbtype"
 )
 
 // Message provides a high-level abstraction for ADS-B messages. The
@@ -328,4 +330,40 @@ func (m *Message) GroundSpeed() (velocity, trackAngle float64, err error) {
 	trackAngle = math.Atan2(vEW, vNS) * 180.0 / math.Pi
 
 	return velocity, trackAngle, nil
+}
+
+// AircraftDetails retrieves the combined aircraft type and emitter category details.
+func (m *Message) AircraftDetails() (string, error) {
+	df, err := m.raw.DF()
+	if err != nil {
+		return "", newError(ErrNotAvailable, "error retrieving DF")
+	}
+	if df != 17 && df != 18 {
+		return "", newError(ErrNotAvailable, "not a DF 17/18 packet")
+	}
+
+	// Retrieve Type Code (TC) and ensure it's between 1 and 4
+	tc := m.raw.TC()
+	if tc < 1 || tc > 4 {
+		return "", newError(ErrNotAvailable, "Invalid Type Code")
+	}
+
+	// Retrieve Emitter Category (CAT) and ensure it's between 0 and 7
+	ec := m.raw.CAT()
+	if ec > 7 {
+		return "", newError(ErrNotAvailable, "Invalid Category value")
+	}
+
+	// Create the key to lookup in EmitterCategories
+	key := adsbtype.EmitterKey{
+		TC:  adsbtype.TC(tc),
+		CAT: adsbtype.CAT(ec),
+	}
+
+	emitterDescription, ok := adsbtype.EmitterCategories[key]
+	if !ok {
+		return "", newError(ErrNotAvailable, "Emitter Category not defined for this combination")
+	}
+
+	return emitterDescription, nil
 }
