@@ -38,7 +38,7 @@ type CPR struct {
 // DecodeLocal decodes an encoded position to a global latitude and
 // longitude by comparing the position to a known reference point.
 // Argument and return value is in the format [latitude, longitude].
-func (c *CPR) DecodeLocal(rp []float64) ([]float64, error) {
+func (c *CPR) DecodeLocal(rp []float64, isAirBorne bool) ([]float64, error) {
 	switch {
 	case len(rp) != 2:
 		return nil, newError(nil, "must provide [lat, lon] as argument")
@@ -53,7 +53,12 @@ func (c *CPR) DecodeLocal(rp []float64) ([]float64, error) {
 	latc := float64(c.Lat) / 131072
 	lonc := float64(c.Lon) / 131072
 
-	dlat := 360.0 / float64(60-c.F)
+	var dlat float64
+	if isAirBorne {
+		dlat = 360.0 / float64(60-c.F)
+	} else {
+		dlat = 90.0 / float64(60-c.F)
+	}
 
 	j := math.Floor(latr/dlat) +
 		math.Floor((mod(latr, dlat)/dlat)-latc+0.5)
@@ -66,10 +71,18 @@ func (c *CPR) DecodeLocal(rp []float64) ([]float64, error) {
 
 	nl := float64(cprNL(coord[0]) - c.F)
 
-	if nl == 0 {
-		dlon = 360.0
+	if isAirBorne {
+		if nl == 0 {
+			dlon = 360.0
+		} else {
+			dlon = 360.0 / nl
+		}
 	} else {
-		dlon = 360.0 / nl
+		if nl == 0 {
+			dlon = 90.0
+		} else {
+			dlon = 90.0 / nl
+		}
 	}
 
 	m := math.Floor(lonr/dlon) +
@@ -85,7 +98,7 @@ func (c *CPR) DecodeLocal(rp []float64) ([]float64, error) {
 // The two messages must have different formats (CPR.F) and must have
 // a time difference of less than 10 seconds (3 NM distance). The
 // return value is in the format [latitude, longitude].
-func DecodeGlobalPosition(c1 *CPR, c2 *CPR) ([]float64, error) {
+func DecodeGlobalPosition(c1 *CPR, c2 *CPR, isAirBorne bool) ([]float64, error) {
 	switch {
 	case c1 == nil || c2 == nil:
 		return nil, newError(nil, "incomplete arguments")
@@ -113,8 +126,21 @@ func DecodeGlobalPosition(c1 *CPR, c2 *CPR) ([]float64, error) {
 		lon1 = float64(c1.Lon) / 131072
 	}
 
-	dlat0 := 360.0 / 60.0
-	dlat1 := 360.0 / 59.0
+	/* for surface vehicles, the following code should be used
+	dlat0 := 90.0 / 60.0 // 360 / 4NZ  = 360 / 15 * 4
+	dlat1 := 90.0 / 59.0 // 360 / 4NZ - 1  = 360 / 15 * 4 - 1
+	*/
+
+	var dlat0, dlat1 float64
+
+	if isAirBorne {
+		dlat0 = 360.0 / 60.0 // 360 / 4NZ  = 360 / 15 * 4
+		dlat1 = 360.0 / 59.0 // 360 / 4NZ - 1  = 360 / 15 * 4 - 1
+
+	} else {
+		dlat0 = 90.0 / 60.0 // 360 / 4NZ  = 360 / 15 * 4
+		dlat1 = 90.0 / 59.0 // 360 / 4NZ - 1  = 360 / 15 * 4 - 1
+	}
 
 	j := math.Floor(((59 * lat0) - (60 * lat1)) + 0.5)
 
@@ -132,12 +158,12 @@ func DecodeGlobalPosition(c1 *CPR, c2 *CPR) ([]float64, error) {
 		return nil, newError(nil, "positions cross latitude boundary")
 	}
 
-	coord := calcGlobal(t0, lon0, lon1, rlat0, rlat1)
+	coord := calcGlobal(t0, lon0, lon1, rlat0, rlat1, isAirBorne)
 
 	return coord, nil
 }
 
-func calcGlobal(t0 bool, lon0, lon1, rlat0, rlat1 float64) []float64 {
+func calcGlobal(t0 bool, lon0, lon1, rlat0, rlat1 float64, isAirborne bool) []float64 {
 	var nl, ni, dlon, lonc float64
 
 	coord := make([]float64, 2)
@@ -152,7 +178,12 @@ func calcGlobal(t0 bool, lon0, lon1, rlat0, rlat1 float64) []float64 {
 			ni = nl
 		}
 
-		dlon = 360.0 / ni
+		if isAirborne {
+			dlon = 360.0 / ni
+		} else {
+			dlon = 90.0 / ni
+		}
+
 		lonc = lon0
 	} else {
 		coord[0] = rlat1
@@ -164,7 +195,11 @@ func calcGlobal(t0 bool, lon0, lon1, rlat0, rlat1 float64) []float64 {
 			ni = nl - 1
 		}
 
-		dlon = 360.0 / ni
+		if isAirborne {
+			dlon = 360.0 / ni
+		} else {
+			dlon = 90.0 / ni
+		}
 		lonc = lon1
 	}
 
