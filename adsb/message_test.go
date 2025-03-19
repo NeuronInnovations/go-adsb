@@ -321,7 +321,7 @@ func testMsgCPRErr(t *testing.T) {
 		t.Error("received unexpected error", err)
 	}
 
-	cpr, err := m.CPR()
+	cpr, _, err := m.CPR()
 	if err == nil {
 		t.Fatal("received nil, expected error")
 	}
@@ -725,7 +725,7 @@ func testDecode(t *testing.T, tc *testCase) {
 func testCPR(t *testing.T, tc *testCase, msg *Message) {
 	t.Helper()
 
-	cpr, err := msg.CPR()
+	cpr, _, err := msg.CPR()
 	if err != nil {
 		if tc.CPR != false || tc.CPR == false && !errors.Is(err, ErrNotAvailable) {
 			t.Fatal("received unexpected error", err)
@@ -756,7 +756,7 @@ func testCPR(t *testing.T, tc *testCase, msg *Message) {
 func testCPRLocal(t *testing.T, tc *testCase, cpr *CPR) {
 	t.Helper()
 
-	c, err := cpr.DecodeLocal(tc.RefPt)
+	c, err := cpr.DecodeLocal(tc.RefPt, true)
 	if err != nil {
 		t.Error("CPR: local decode error:", err)
 	} else {
@@ -797,7 +797,7 @@ func testCPRGlobal(t *testing.T, tc *testCase, cpr *CPR) {
 		t.Fatal("received unexpected error", err)
 	}
 
-	cpr2, err := m.CPR()
+	cpr2, _, err := m.CPR()
 	if err != nil {
 		t.Fatal("received unexpected error", err)
 	}
@@ -806,7 +806,7 @@ func testCPRGlobal(t *testing.T, tc *testCase, cpr *CPR) {
 		t.Fatal("no position decoded in Msg2")
 	}
 
-	c, err := DecodeGlobalPosition(cpr, cpr2)
+	c, err := DecodeGlobalPosition(cpr, cpr2, true)
 	if err != nil {
 		t.Error("CPR: global decode error:", err)
 	} else {

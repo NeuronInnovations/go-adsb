@@ -216,24 +216,26 @@ func (m *Message) Sqk() ([]byte, error) {
 }
 
 // CPR returns the compact position report.
-func (m *Message) CPR() (*CPR, error) {
+func (m *Message) CPR() (*CPR, bool, error) {
 	df, err := m.raw.DF()
 	if err != nil {
-		return nil, newError(err, "error retrieving position")
+		return nil, false, newError(err, "error retrieving position")
 	}
 
+	var typeCode uint64
 	switch df {
 	case 17, 18:
 		tc, err := m.raw.ESType()
+		typeCode = tc
 		if err != nil {
-			return nil, newError(err, "error retrieving position")
+			return nil, false, newError(err, "error retrieving position")
 		}
 
-		if tc < 9 || tc > 18 {
-			return nil, newError(ErrNotAvailable, "error retrieving position")
+		if (tc < 9 || tc > 18) && (tc < 5 || tc > 8) {
+			return nil, false, newError(ErrNotAvailable, "error retrieving position")
 		}
 	default:
-		return nil, newError(ErrNotAvailable, "error retrieving position")
+		return nil, false, newError(ErrNotAvailable, "error retrieving position")
 	}
 
 	c := new(CPR)
@@ -243,7 +245,8 @@ func (m *Message) CPR() (*CPR, error) {
 	c.Lat = uint32(m.raw.Bits(55, 71))
 	c.Lon = uint32(m.raw.Bits(72, 88))
 
-	return c, nil
+	isAirborne := typeCode >= 9 && typeCode <= 18
+	return c, isAirborne, nil
 }
 
 // Vertical speed, in m/s.
@@ -330,6 +333,74 @@ func (m *Message) GroundSpeed() (velocity, trackAngle float64, err error) {
 	trackAngle = math.Atan2(vEW, vNS) * 180.0 / math.Pi
 
 	return velocity, trackAngle, nil
+}
+
+func (m *Message) SurfaceSpeed() (velocity, trackAngle float64, err error) {
+	// Check if the message is a valid DF 17 or DF 18 (ADS-B message)
+	df, err := m.raw.DF()
+	if err != nil {
+		return 0.0, 0.0, newError(ErrNotAvailable, "err decode DF")
+	} else if df != 17 && df != 18 {
+		return 0.0, 0.0, newError(ErrNotAvailable, "not a DF 17/18 packet")
+	}
+
+	// Check if the type code (TC) is for surface position (TC 5-8)
+	tc := m.raw.TC()
+	if tc < 5 || tc > 8 {
+		return 0.0, 0.0, newError(ErrNotAvailable, "surface speed not available")
+	}
+
+	// Ensure the message has enough bits for surface speed decoding
+	dlen := m.raw.data.Len()
+	if dlen < 14 {
+		return 0.0, 0.0, newError(ErrNotAvailable, fmt.Sprintf("invalid msg len: %d, %s", dlen, hex.EncodeToString(m.raw.data.Bytes())))
+	}
+
+	// Decode the movement field (ground speed)
+	movement := int(m.raw.Bits(38, 44))
+	velocity, err = decodeGroundSpeed(movement)
+	if err != nil {
+		return 0.0, 0.0, err
+	}
+
+	// Decode the ground track field
+	trackStatus := int(m.raw.Bit(45))
+	if trackStatus != 1 {
+		return 0.0, 0.0, newError(ErrNotAvailable, "ground track not available")
+	}
+	trackEncoded := int(m.raw.Bits(46, 52))
+	trackAngle = float64(trackEncoded) * (360.0 / 128.0)
+
+	// Convert ground speed from knots to meters per second (optional)
+	velocity *= KNOT_TO_MPS
+
+	return velocity, trackAngle, nil
+}
+
+// decodeGroundSpeed decodes the ground speed from the movement field
+func decodeGroundSpeed(movement int) (float64, error) {
+	switch {
+	case movement == 0:
+		return 0.0, newError(ErrNotAvailable, "speed not available")
+	case movement == 1:
+		return 0.0, nil // Stopped
+	case movement >= 2 && movement <= 8:
+		return 0.125 + 0.125*float64(movement-2), nil
+	case movement >= 9 && movement <= 12:
+		return 1.0 + 0.25*float64(movement-9), nil
+	case movement >= 13 && movement <= 38:
+		return 2.0 + 0.5*float64(movement-13), nil
+	case movement >= 39 && movement <= 93:
+		return 15.0 + 1.0*float64(movement-39), nil
+	case movement >= 94 && movement <= 108:
+		return 70.0 + 2.0*float64(movement-94), nil
+	case movement >= 109 && movement <= 123:
+		return 100.0 + 5.0*float64(movement-109), nil
+	case movement == 124:
+		return 175.0, nil
+	default:
+		return 0.0, newError(ErrNotAvailable, "invalid movement value")
+	}
 }
 
 // AircraftDetails retrieves the combined aircraft type and emitter category details.
