@@ -1,3 +1,4 @@
+// This file was modified from Original Copyright below:
 // Copyright 2020 Collin Kreklow
 //
 // Permission is hereby granted, free of charge, to any person obtaining
@@ -93,12 +94,7 @@ func (c *CPR) DecodeLocal(rp []float64, isAirBorne bool) ([]float64, error) {
 	return coord, nil
 }
 
-// DecodeGlobalPosition decodes an encoded position to a globally
-// unabmiguous latitude and longitude by combining two CPR messages.
-// The two messages must have different formats (CPR.F) and must have
-// a time difference of less than 10 seconds (3 NM distance). The
-// return value is in the format [latitude, longitude].
-func DecodeGlobalPosition(c1 *CPR, c2 *CPR, isAirBorne bool) ([]float64, error) {
+func DecodeGlobalPosition(c1 *CPR, c2 *CPR, isAirBorne bool, referenceLat *float64, referenceLon *float64) ([]float64, error) {
 	switch {
 	case c1 == nil || c2 == nil:
 		return nil, newError(nil, "incomplete arguments")
@@ -158,12 +154,15 @@ func DecodeGlobalPosition(c1 *CPR, c2 *CPR, isAirBorne bool) ([]float64, error) 
 		return nil, newError(nil, "positions cross latitude boundary")
 	}
 
-	coord := calcGlobal(t0, lon0, lon1, rlat0, rlat1, isAirBorne)
+	coord := calcGlobal(t0, lon0, lon1, rlat0, rlat1, isAirBorne, referenceLat, referenceLon)
+
+	//TODO: check if null
+	//TODO: use reference for sanity check
 
 	return coord, nil
 }
 
-func calcGlobal(t0 bool, lon0, lon1, rlat0, rlat1 float64, isAirborne bool) []float64 {
+func calcGlobal(t0 bool, lon0, lon1, rlat0, rlat1 float64, isAirborne bool, referenceLat *float64, referenceLon *float64) []float64 {
 	var nl, ni, dlon, lonc float64
 
 	coord := make([]float64, 2)
@@ -210,6 +209,36 @@ func calcGlobal(t0 bool, lon0, lon1, rlat0, rlat1 float64, isAirborne bool) []fl
 		coord[1] -= 360
 	}
 
+	//take the result and make 4 solutions by adding 90 to each. then get the reference position and pick the right one.
+	if !isAirborne {
+		if referenceLon == nil {
+			return []float64{}
+		}
+		// Generate candidates by adding/subtracting multiples of 90 degrees
+		candidates := []float64{}
+		for delta := -360.0; delta <= 360.0; delta += 90.0 {
+			cand := coord[1] + delta
+			if cand > 180 {
+				cand -= 360
+			} else if cand < -180 {
+				cand += 360
+			}
+			candidates = append(candidates, cand)
+		}
+
+		// Select the candidate closest to the reference longitude
+		closest := candidates[0]
+		minDiff := math.Abs(*referenceLon - closest)
+
+		for _, c := range candidates[1:] {
+			if diff := math.Abs(*referenceLon - c); diff < minDiff {
+				closest = c
+				minDiff = diff
+			}
+		}
+
+		coord[1] = closest
+	}
 	return coord
 }
 
