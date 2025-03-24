@@ -806,7 +806,7 @@ func testCPRGlobal(t *testing.T, tc *testCase, cpr *CPR) {
 		t.Fatal("no position decoded in Msg2")
 	}
 
-	c, err := DecodeGlobalPosition(cpr, cpr2, true)
+	c, err := DecodeGlobalPosition(cpr, cpr2, true, nil, nil)
 	if err != nil {
 		t.Error("CPR: global decode error:", err)
 	} else {
