@@ -157,12 +157,14 @@ func DecodeGlobalPosition(c1 *CPR, c2 *CPR, isAirBorne bool, referenceLat *float
 	coord := calcGlobal(t0, lon0, lon1, rlat0, rlat1, isAirBorne, referenceLat, referenceLon)
 
 	//TODO: check if null
-	//TODO: use reference for sanity check
 
 	return coord, nil
 }
 
+// TODO: works for airborne positions but partially for surface. E.g. Birmingahm (norther hemisphere) is ok but Canbera (southern hemisphere) is not
+// Use local decoding for surface for now and make sure you do sanity check for positions that are too far away from reference positions.
 func calcGlobal(t0 bool, lon0, lon1, rlat0, rlat1 float64, isAirborne bool, referenceLat *float64, referenceLon *float64) []float64 {
+
 	var nl, ni, dlon, lonc float64
 
 	coord := make([]float64, 2)
@@ -202,19 +204,18 @@ func calcGlobal(t0 bool, lon0, lon1, rlat0, rlat1 float64, isAirborne bool, refe
 		lonc = lon1
 	}
 
-	m := math.Floor(((lon0 * (nl - 1)) - (lon1 * nl)) + 0.5)
-
+	//m := math.Floor(((lon0 * (nl - 1)) - (lon1 * nl)) + 0.5)
+	m := math.Round(((lon0 * (nl - 1)) - (lon1 * nl)))
 	coord[1] = dlon * (mod(m, ni) + lonc)
 	if coord[1] >= 180 {
 		coord[1] -= 360
 	}
 
-	//take the result and make 4 solutions by adding 90 to each. then get the reference position and pick the right one.
+	// Modified candidate selection for longitude (surface messages)
 	if !isAirborne {
-		if referenceLon == nil {
+		if referenceLon == nil || referenceLat == nil {
 			return []float64{}
 		}
-		// Generate candidates by adding/subtracting multiples of 90 degrees
 		candidates := []float64{}
 		for delta := -360.0; delta <= 360.0; delta += 90.0 {
 			cand := coord[1] + delta
@@ -225,19 +226,48 @@ func calcGlobal(t0 bool, lon0, lon1, rlat0, rlat1 float64, isAirborne bool, refe
 			}
 			candidates = append(candidates, cand)
 		}
-
-		// Select the candidate closest to the reference longitude
+		// Select candidate minimizing the cosine-weighted difference
 		closest := candidates[0]
-		minDiff := math.Abs(*referenceLon - closest)
-
+		minDiff := math.Abs((*referenceLon - closest) * math.Cos(*referenceLat*math.Pi/180))
 		for _, c := range candidates[1:] {
-			if diff := math.Abs(*referenceLon - c); diff < minDiff {
+			diff := math.Abs((*referenceLon - c) * math.Cos(*referenceLat*math.Pi/180))
+			if diff < minDiff {
 				closest = c
 				minDiff = diff
 			}
 		}
-
 		coord[1] = closest
+	}
+
+	// For surface (non-airborne) messages, adjust latitude by selecting the candidate closest to the reference latitude.
+	if !isAirborne {
+		if referenceLat != nil {
+			candidatesLat := []float64{}
+			// Generate candidate latitudes by adding multiples of 90 degrees.
+			// (We use 90° here because surface CPR covers a 90° zone.)
+			for delta := -180.0; delta <= 180.0; delta += 90.0 {
+				cand := coord[0] + delta
+				// Clamp candidate to valid latitude range.
+				if cand < -90 {
+					cand = -90
+				} else if cand > 90 {
+					cand = 90
+				}
+				candidatesLat = append(candidatesLat, cand)
+			}
+
+			// Select the candidate latitude closest to the reference latitude.
+			closestLat := candidatesLat[0]
+			minDiff := math.Abs(*referenceLat - closestLat)
+			for _, cand := range candidatesLat[1:] {
+				if diff := math.Abs(*referenceLat - cand); diff < minDiff {
+					closestLat = cand
+					minDiff = diff
+				}
+			}
+
+			coord[0] = closestLat
+		}
 	}
 	return coord
 }
