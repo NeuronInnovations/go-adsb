@@ -36,9 +36,6 @@ type CPR struct {
 	Lon uint32 // encoded longitude
 }
 
-// DecodeLocal decodes an encoded position to a global latitude and
-// longitude by comparing the position to a known reference point.
-// Argument and return value is in the format [latitude, longitude].
 func (c *CPR) DecodeLocal(rp []float64, isAirBorne bool) ([]float64, error) {
 	switch {
 	case len(rp) != 2:
@@ -150,6 +147,10 @@ func DecodeGlobalPosition(c1 *CPR, c2 *CPR, isAirBorne bool, referenceLat *float
 		rlat1 -= 360
 	}
 
+	if !isAirBorne && referenceLat != nil {
+		adjustSurfaceCPRLatitudes(*referenceLat, &rlat0, &rlat1)
+	}
+
 	if cprNL(rlat0) != cprNL(rlat1) {
 		return nil, newError(nil, "positions cross latitude boundary")
 	}
@@ -161,8 +162,31 @@ func DecodeGlobalPosition(c1 *CPR, c2 *CPR, isAirBorne bool, referenceLat *float
 	return coord, nil
 }
 
-// TODO: works for airborne positions but partially for surface. E.g. Birmingahm (norther hemisphere) is ok but Canbera (southern hemisphere) is not
-// Use local decoding for surface for now and make sure you do sanity check for positions that are too far away from reference positions.
+func adjustSurfaceCPRLatitudes(refLat float64, rlat0, rlat1 *float64) {
+	fix := func(rlat *float64) {
+		if *rlat == 0 {
+			if refLat < -45 {
+				*rlat = -90
+			} else if refLat > 45 {
+				*rlat = 90
+			}
+		} else if (*rlat - refLat) > 45 {
+			*rlat -= 90
+		}
+	}
+	fix(rlat0)
+	fix(rlat1)
+}
+
+// adjustSurfaceLongitudeToRef moves decoded longitude toward reference in 90° steps (icao / do-260 cpr rules or  dump1090).
+func adjustSurfaceLongitudeToRef(refLon, rlon float64) float64 {
+	r := rlon + math.Floor((refLon-rlon+45)/90)*90
+	r -= math.Floor((r+180)/360) * 360
+	return r
+}
+
+// calcGlobal completes global CPR longitude from paired even/odd frames.
+
 func calcGlobal(t0 bool, lon0, lon1, rlat0, rlat1 float64, isAirborne bool, referenceLat *float64, referenceLon *float64) []float64 {
 
 	var nl, ni, dlon, lonc float64
@@ -171,6 +195,7 @@ func calcGlobal(t0 bool, lon0, lon1, rlat0, rlat1 float64, isAirborne bool, refe
 
 	if t0 { //nolint:nestif // variables assigned based on t0 type
 		coord[0] = rlat0
+
 		nl = float64(cprNL(rlat0))
 
 		if nl <= 1 {
@@ -186,10 +211,12 @@ func calcGlobal(t0 bool, lon0, lon1, rlat0, rlat1 float64, isAirborne bool, refe
 		}
 
 		lonc = lon0
-	} else {
+	} else { // t0 == false (odd message is latest)
 		coord[0] = rlat1
 		nl = float64(cprNL(rlat1))
 
+		// Odd-format CPR uses one fewer longitude zone than NL(lat) (DO-260B / dump1090
+		// cprNFunction(lat, fflag=1)) for both airborne and surface.
 		if nl-1 <= 1 {
 			ni = 1
 		} else {
@@ -206,48 +233,41 @@ func calcGlobal(t0 bool, lon0, lon1, rlat0, rlat1 float64, isAirborne bool, refe
 
 	//m := math.Floor(((lon0 * (nl - 1)) - (lon1 * nl)) + 0.5)
 	m := math.Round(((lon0 * (nl - 1)) - (lon1 * nl)))
-	coord[1] = dlon * (mod(m, ni) + lonc)
+	coord[1] = dlon * (math.Mod(m, ni) + lonc)
 	if coord[1] >= 180 {
 		coord[1] -= 360
 	}
 
-	// Modified candidate selection for longitude (surface messages)
-	if !isAirborne {
-		if referenceLon == nil || referenceLat == nil {
-			return []float64{}
-		}
-		candidates := []float64{}
-		for delta := -360.0; delta <= 360.0; delta += 90.0 {
-			cand := coord[1] + delta
-			if cand > 180 {
-				cand -= 360
-			} else if cand < -180 {
-				cand += 360
+	if !isAirborne && referenceLon != nil && referenceLat != nil {
+		coord[1] = adjustSurfaceLongitudeToRef(*referenceLon, coord[1])
+	} else if !isAirborne {
+		// Legacy disambiguation when references are incomplete (prefer full ref for surface).
+		if referenceLon != nil && referenceLat != nil {
+			candidates := []float64{}
+			for delta := -360.0; delta <= 360.0; delta += 90.0 {
+				cand := coord[1] + delta
+				if cand > 180 {
+					cand -= 360
+				} else if cand < -180 {
+					cand += 360
+				}
+				candidates = append(candidates, cand)
 			}
-			candidates = append(candidates, cand)
-		}
-		// Select candidate minimizing the cosine-weighted difference
-		closest := candidates[0]
-		minDiff := math.Abs((*referenceLon - closest) * math.Cos(*referenceLat*math.Pi/180))
-		for _, c := range candidates[1:] {
-			diff := math.Abs((*referenceLon - c) * math.Cos(*referenceLat*math.Pi/180))
-			if diff < minDiff {
-				closest = c
-				minDiff = diff
+			closest := candidates[0]
+			minDiff := math.Abs((*referenceLon - closest) * math.Cos(*referenceLat*math.Pi/180))
+			for _, c := range candidates[1:] {
+				diff := math.Abs((*referenceLon - c) * math.Cos(*referenceLat*math.Pi/180))
+				if diff < minDiff {
+					closest = c
+					minDiff = diff
+				}
 			}
+			coord[1] = closest
 		}
-		coord[1] = closest
-	}
-
-	// For surface (non-airborne) messages, adjust latitude by selecting the candidate closest to the reference latitude.
-	if !isAirborne {
 		if referenceLat != nil {
 			candidatesLat := []float64{}
-			// Generate candidate latitudes by adding multiples of 90 degrees.
-			// (We use 90° here because surface CPR covers a 90° zone.)
 			for delta := -180.0; delta <= 180.0; delta += 90.0 {
 				cand := coord[0] + delta
-				// Clamp candidate to valid latitude range.
 				if cand < -90 {
 					cand = -90
 				} else if cand > 90 {
@@ -255,8 +275,6 @@ func calcGlobal(t0 bool, lon0, lon1, rlat0, rlat1 float64, isAirborne bool, refe
 				}
 				candidatesLat = append(candidatesLat, cand)
 			}
-
-			// Select the candidate latitude closest to the reference latitude.
 			closestLat := candidatesLat[0]
 			minDiff := math.Abs(*referenceLat - closestLat)
 			for _, cand := range candidatesLat[1:] {
@@ -265,7 +283,6 @@ func calcGlobal(t0 bool, lon0, lon1, rlat0, rlat1 float64, isAirborne bool, refe
 					minDiff = diff
 				}
 			}
-
 			coord[0] = closestLat
 		}
 	}
