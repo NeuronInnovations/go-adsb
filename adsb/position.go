@@ -21,21 +21,44 @@
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Package adsb — position.go implements Compact Position Reporting (CPR) per
+// EUROCAE ED-102B "Minimum Operational Performance Specification (MOPS) for
+// 1090 MHz Extended Squitter ADS-B and TIS-B" (CPR: §T.3–§T.6, encoding §A.1.7).
+// Equivalent material appears in RTCA DO-260B. An in-repo EUROCAE MOPS copy
+// is available at the module root for cross-checking.
+//
+// Document page index (1-based; EUROCAE edition with 1492 numbered pages; locate
+// material by § labels if pagination differs in another edition):
+//   - §A.1.7 (CPR algorithm / field usage): pp. 1123 ff.
+//   - §2.2.3.2.3.7 “CPR Encoded Latitude” (17-bit ME bits ↔ Lat): p. 87.
+//   - §T.1–§T.10 (CPR tutorial): body pp. 1442–1486.
+//   - §T.3 CPR coordinate system (zones): pp. 1444–1446.
+//   - §T.5.1 global decoding (airborne): pp. 1451, 1456.
+//   - §T.5.2 global decoding (surface): p. 1458.
+//   - §T.5.3 local decoding (airborne): pp. 1459–1463.
+//   - §T.5.4 local decoding (surface): p. 1464.
+//   - §T.6 NL(φ) / transition latitudes (table aligns with nlTbl): pp. 1464, 1480.
+//
+// Inline comments tag steps against the § references above; 17-bit CPR uses 2^17 = 131072.
 package adsb
 
 import (
 	"math"
 )
 
-// CPR is an extended squitter compact position report.
+// CPR is one extended squitter compact position report (Nb, T, F, Lat, Lon).
+// Field sizes and ME bit placement follow §A.1.7 / §2.2.3.2.3.7 (pp. 1123 ff., 87).
 type CPR struct {
 	Nb  uint8  // number of encoded bits (17, 19, 14 or 12)
-	T   uint8  // time bit
-	F   uint8  // format bit
-	Lat uint32 // encoded latitude
-	Lon uint32 // encoded longitude
+	T   uint8  // time bit (§T.4)
+	F   uint8  // format bit: 0 = even, 1 = odd CPR subframe
+	Lat uint32 // encoded latitude CPR (17-bit → scale by 1/131072)
+	Lon uint32 // encoded longitude CPR (17-bit → scale by 1/131072)
 }
 
+// DecodeLocal — local (relative) CPR: one frame plus a reference [lat, lon]
+// to resolve the latitude/longitude zones. Airborne uses 360°/NZ; surface uses 90°/NZ
+// longitude cell width. §T.5.3 (airborne) / §T.5.4 (surface); pp. 1459–1464.
 func (c *CPR) DecodeLocal(rp []float64, isAirBorne bool) ([]float64, error) {
 	switch {
 	case len(rp) != 2:
@@ -48,9 +71,11 @@ func (c *CPR) DecodeLocal(rp []float64, isAirBorne bool) ([]float64, error) {
 
 	latr := rp[0]
 	lonr := rp[1]
+	// CPR latitude/longitude as fractional values in [0,1).
 	latc := float64(c.Lat) / 131072
 	lonc := float64(c.Lon) / 131072
 
+	// latitude zone size Δ_lat — even/odd CPR grids (airborne 360°/NZ; surface 90°/NZ with F as in the MOPS).
 	var dlat float64
 	if isAirBorne {
 		dlat = 360.0 / float64(60-c.F)
@@ -58,17 +83,21 @@ func (c *CPR) DecodeLocal(rp []float64, isAirBorne bool) ([]float64, error) {
 		dlat = 90.0 / float64(60-c.F)
 	}
 
+	// latitude index j from reference lat and encoded latc.
 	j := math.Floor(latr/dlat) +
 		math.Floor((mod(latr, dlat)/dlat)-latc+0.5)
 
 	coord := make([]float64, 2)
 
+	// decoded latitude = Δ_lat * (j + latc).
 	coord[0] = dlat * (j + latc)
 
 	var dlon float64
 
+	// NL(lat) from decoded lat; longitude zone count for this F.
 	nl := float64(cprNL(coord[0]) - c.F)
 
+	// longitude cell width Δ_lon — 360/NL airborne, 90/NL surface (NL=0 → one world strip).
 	if isAirBorne {
 		if nl == 0 {
 			dlon = 360.0
@@ -83,14 +112,19 @@ func (c *CPR) DecodeLocal(rp []float64, isAirBorne bool) ([]float64, error) {
 		}
 	}
 
+	// longitude index m from reference lon and encoded lonc.
 	m := math.Floor(lonr/dlon) +
 		math.Floor((mod(lonr, dlon)/dlon)-lonc+0.5)
 
+	// decoded longitude = Δ_lon * (m + lonc).
 	coord[1] = dlon * (m + lonc)
 
 	return coord, nil
 }
 
+// DecodeGlobalPosition — global CPR: two frames with opposite F (even+odd).
+// referenceLat/referenceLon disambiguate surface latitude/longitude quadrants when non-nil.
+// §T.5.1 (airborne) / §T.5.2 (surface); pp. 1451–1458.
 func DecodeGlobalPosition(c1 *CPR, c2 *CPR, isAirBorne bool, referenceLat *float64, referenceLon *float64) ([]float64, error) {
 	switch {
 	case c1 == nil || c2 == nil:
@@ -101,7 +135,8 @@ func DecodeGlobalPosition(c1 *CPR, c2 *CPR, isAirBorne bool, referenceLat *float
 		return nil, newError(nil, "format must be different")
 	}
 
-	var t0 bool // set t0 to true if the even format is the later message
+	// which subframe is “latest” sets which raw lat/lon pair is lat0/lon0 vs lat1/lon1.
+	var t0 bool // true ⇒ even CPR is the later (second-in-time) message
 
 	var lat0, lon0, lat1, lon1 float64
 
@@ -119,11 +154,7 @@ func DecodeGlobalPosition(c1 *CPR, c2 *CPR, isAirBorne bool, referenceLat *float
 		lon1 = float64(c1.Lon) / 131072
 	}
 
-	/* for surface vehicles, the following code should be used
-	dlat0 := 90.0 / 60.0 // 360 / 4NZ  = 360 / 15 * 4
-	dlat1 := 90.0 / 59.0 // 360 / 4NZ - 1  = 360 / 15 * 4 - 1
-	*/
-
+	// global decode — Δ_lat for even (0) and odd (1) CPR subframes.
 	var dlat0, dlat1 float64
 
 	if isAirBorne {
@@ -135,8 +166,10 @@ func DecodeGlobalPosition(c1 *CPR, c2 *CPR, isAirBorne bool, referenceLat *float
 		dlat1 = 90.0 / 59.0 // 360 / 4NZ - 1  = 360 / 15 * 4 - 1
 	}
 
+	// latitude index j from paired even/odd fractional latitudes.
 	j := math.Floor(((59 * lat0) - (60 * lat1)) + 0.5)
 
+	// recovered latitudes rlat0, rlat1 before NL/NL consistency check.
 	rlat0 := dlat0 * (mod(j, 60) + lat0)
 	if rlat0 >= 270 {
 		rlat0 -= 360
@@ -147,23 +180,28 @@ func DecodeGlobalPosition(c1 *CPR, c2 *CPR, isAirBorne bool, referenceLat *float
 		rlat1 -= 360
 	}
 
+	// §T.5.2 (surface): pick latitude hemisphere/band vs reference when given.
 	if !isAirBorne && referenceLat != nil {
 		adjustSurfaceCPRLatitudes(*referenceLat, &rlat0, &rlat1)
 	}
 
+	// both CPR latitudes must lie in the same NL(lat) band for a valid pair.
 	if cprNL(rlat0) != cprNL(rlat1) {
 		return nil, newError(nil, "positions cross latitude boundary")
 	}
 
+	// recover longitude from paired lon fractions + rlat*, then normalize.
 	coord := calcGlobal(t0, lon0, lon1, rlat0, rlat1, isAirBorne, referenceLat, referenceLon)
-
-	//TODO: check if null
 
 	return coord, nil
 }
 
+// adjustSurfaceCPRLatitudes — surface latitude quadrant selection
+// using a reference latitude (when encoded latitude hits ambiguous 0° bands).
+// §T.5.2 (surface global latitude handling); p. 1458.
 func adjustSurfaceCPRLatitudes(refLat float64, rlat0, rlat1 *float64) {
 	fix := func(rlat *float64) {
+		// poles/equator zero encodings and ±90° band flips vs ref.
 		if *rlat == 0 {
 			if refLat < -45 {
 				*rlat = -90
@@ -178,32 +216,38 @@ func adjustSurfaceCPRLatitudes(refLat float64, rlat0, rlat1 *float64) {
 	fix(rlat1)
 }
 
-// adjustSurfaceLongitudeToRef moves decoded longitude toward reference in 90° steps (icao / do-260 cpr rules or  dump1090).
+// adjustSurfaceLongitudeToRef — surface longitude: shift by multiples
+// of 90° so the result is closest in sense to the reference longitude.
+// §T.5.2 / §T.5.4; pp. 1458, 1464.
 func adjustSurfaceLongitudeToRef(refLon, rlon float64) float64 {
 	r := rlon + math.Floor((refLon-rlon+45)/90)*90
 	r -= math.Floor((r+180)/360) * 360
 	return r
 }
 
-// calcGlobal completes global CPR longitude from paired even/odd frames.
-
+// calcGlobal — global longitude from paired lon0/lon1 fractions
+// and recovered latitudes rlat0/rlat1; t0 selects whether even or odd CPR is “latest”.
+// §T.5.1 / §T.5.2; pp. 1451–1458 (see also §T.5.4 for surface local tie-breaks).
 func calcGlobal(t0 bool, lon0, lon1, rlat0, rlat1 float64, isAirborne bool, referenceLat *float64, referenceLon *float64) []float64 {
 
 	var nl, ni, dlon, lonc float64
 
 	coord := make([]float64, 2)
 
-	if t0 { //nolint:nestif // variables assigned based on t0 type
+	if t0 { //nolint:nestif // even CPR is latest — decoded lat is rlat0.
 		coord[0] = rlat0
 
+		// NL = number of longitude zones at this latitude (even subframe).
 		nl = float64(cprNL(rlat0))
 
+		// Ni = NL for even format (minimum 1).
 		if nl <= 1 {
 			ni = 1
 		} else {
 			ni = nl
 		}
 
+		// Δ_lon = 360°/Ni airborne, 90°/Ni surface.
 		if isAirborne {
 			dlon = 360.0 / ni
 		} else {
@@ -211,12 +255,11 @@ func calcGlobal(t0 bool, lon0, lon1, rlat0, rlat1 float64, isAirborne bool, refe
 		}
 
 		lonc = lon0
-	} else { // t0 == false (odd message is latest)
+	} else { // odd CPR is latest — decoded lat is rlat1.
 		coord[0] = rlat1
 		nl = float64(cprNL(rlat1))
 
-		// Odd-format CPR uses one fewer longitude zone than NL(lat) (DO-260B / dump1090
-		// cprNFunction(lat, fflag=1)) for both airborne and surface.
+		// odd format uses Ni = NL − 1 (clamped to at least 1).
 		if nl-1 <= 1 {
 			ni = 1
 		} else {
@@ -231,39 +274,23 @@ func calcGlobal(t0 bool, lon0, lon1, rlat0, rlat1 float64, isAirborne bool, refe
 		lonc = lon1
 	}
 
-	//m := math.Floor(((lon0 * (nl - 1)) - (lon1 * nl)) + 0.5)
+	// longitude index m from paired lon fractions; lonc is the active subframe’s lon CPR.
 	m := math.Round(((lon0 * (nl - 1)) - (lon1 * nl)))
 	coord[1] = dlon * (math.Mod(m, ni) + lonc)
 	if coord[1] >= 180 {
 		coord[1] -= 360
 	}
 
+	// Surface global longitude is ambiguous in 90° steps until a reference
+	// fixes the lane (same MOPS surface material as adjustSurfaceLongitudeToRef).
+	// With both ref lon and ref lat, apply that shift once. If only ref lat is
+	// set, the first branch is skipped and latitude may still be disambiguated
+	// in 90° bands below (longitude enumeration lived here historically but was
+	// redundant with adjustSurfaceLongitudeToRef and unreachable once added).
 	if !isAirborne && referenceLon != nil && referenceLat != nil {
 		coord[1] = adjustSurfaceLongitudeToRef(*referenceLon, coord[1])
 	} else if !isAirborne {
-		// Legacy disambiguation when references are incomplete (prefer full ref for surface).
-		if referenceLon != nil && referenceLat != nil {
-			candidates := []float64{}
-			for delta := -360.0; delta <= 360.0; delta += 90.0 {
-				cand := coord[1] + delta
-				if cand > 180 {
-					cand -= 360
-				} else if cand < -180 {
-					cand += 360
-				}
-				candidates = append(candidates, cand)
-			}
-			closest := candidates[0]
-			minDiff := math.Abs((*referenceLon - closest) * math.Cos(*referenceLat*math.Pi/180))
-			for _, c := range candidates[1:] {
-				diff := math.Abs((*referenceLon - c) * math.Cos(*referenceLat*math.Pi/180))
-				if diff < minDiff {
-					closest = c
-					minDiff = diff
-				}
-			}
-			coord[1] = closest
-		}
+		// ±90° latitude band candidates vs reference when ref lat alone may resolve band.
 		if referenceLat != nil {
 			candidatesLat := []float64{}
 			for delta := -180.0; delta <= 180.0; delta += 90.0 {
@@ -289,26 +316,17 @@ func calcGlobal(t0 bool, lon0, lon1, rlat0, rlat1 float64, isAirborne bool, refe
 	return coord
 }
 
-// mod implements the MOD function as defined in the ADS-B
-// specifications.
+// mod — MOD (always-non-negative remainder) for CPR indices.
+// Used in §T.5 / local decode; pp. 1459–1464.
 func mod(a float64, b float64) float64 {
 	return a - (b * math.Floor(a/b))
 }
 
-/* Lookup table computed with the following code:
-tbl := make(map[int]float64)
-
-for nl := 59; nl > 1; nl-- {
-	a := 1 - math.Cos(math.Pi/30)
-	b := 1 - math.Cos(2*math.Pi/float64(nl))
-	c := math.Sqrt(a / b)
-
-	tbl[nl] = (180 / math.Pi) * math.Acos(c)
-
-	fmt.Printf("%d: %s\n", nl, big.NewFloat(tbl[nl]).String())
-}
-*/
-
+// nlTbl holds NL(lat) latitude zone count breakpoints φᵢ (degrees), tabulated
+// per §T.6 (same construction as the sample Go generator in git history).
+// §T.6 NL function / transition latitudes; pp. 1464, 1480.
+//
+//	NL from 59 down: acos(sqrt((1-cos π/30)/(1-cos 2π/NL))) in degrees.
 var nlTbl = map[uint8]float64{
 	59: 10.4704713,
 	58: 14.82817437,
@@ -370,7 +388,8 @@ var nlTbl = map[uint8]float64{
 	2:  87,
 }
 
-// cprNL implements the longitude zone lookup table.
+// cprNL — NL(φ): number of longitude zones at |latitude|, from the φᵢ table.
+// §T.6; pp. 1464, 1480.
 func cprNL(x float64) uint8 {
 	x = math.Abs(x)
 

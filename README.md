@@ -30,6 +30,12 @@ arbitrary bit sequences and named message fields. `Message` is a
 higher-level abstraction that provides functions to retrieve decoded values
 such as altitude and callsign from the encoded data.
 
+CPR (position) decoding in `adsb/position.go` is documented against **EUROCAE ED-102B**
+(*MOPS for 1090 MHz ES, ADS-B and TIS-B*), using § references (e.g. §T.5.* decode, §A.1.7 encoding).
+An in-repo EUROCAE MOPS copy sits at the module root for cross-checking. RTCA **DO-260B** is the aligned US document.
+The `position.go` package comment includes a **page index** for one 1492-page EUROCAE edition
+(§ labels are the stable anchors if pagination differs).
+
 Both `Message` and `RawMessage` designed to accept a `beast.Frame` to
 provide a complete solution for decoding usable values from an incoming data
 stream.
@@ -54,3 +60,4 @@ Credit goes to both [Collin Kreklow](https://github.com/cjkreklow/go-adsb) and [
 
 This fork, maintained by Neuron Innovations, aims to build upon their excellent work.
 
+For CPR decoding read **ED-102B** (§T.5–§T.6 decode flow, §A.1.7 encoding and appendix T);
