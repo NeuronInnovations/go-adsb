@@ -277,9 +277,9 @@ func calcGlobal(t0 bool, lon0, lon1, rlat0, rlat1 float64, isAirborne bool, refe
 	// longitude index m from paired lon fractions; lonc is the active subframe’s lon CPR.
 	m := math.Round(((lon0 * (nl - 1)) - (lon1 * nl)))
 	coord[1] = dlon * (math.Mod(m, ni) + lonc)
-	if coord[1] >= 180 {
-		coord[1] -= 360
-	}
+	// Normalize longitude to [-180, 180) to avoid out-of-range values (e.g. -336)
+	// leaking into downstream validation.
+	coord[1] = mod(coord[1]+180, 360) - 180
 
 	// Surface global longitude is ambiguous in 90° steps until a reference
 	// fixes the lane (same MOPS surface material as adjustSurfaceLongitudeToRef).
